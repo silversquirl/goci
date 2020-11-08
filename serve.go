@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"mime"
 	"net/http"
 	"os"
 	"path"
@@ -49,16 +50,20 @@ func (ci *CI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ref == "" {
-		ref = "master"
-	} else if ref[0] == '-' {
+	proj, err := ci.Project(project)
+	if err != nil {
+		log.Print(err)
 		http.NotFound(w, r)
 		return
 	}
 
-	proj, err := ci.Project(project)
-	if err != nil {
-		log.Print(err)
+	if ref == "" {
+		if r.Method == "POST" {
+			ci.HandleWebhook(proj, w, r)
+		}
+
+		ref = "master"
+	} else if ref[0] == '-' {
 		http.NotFound(w, r)
 		return
 	}
@@ -85,6 +90,40 @@ func (ci *CI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	build.StartBuild()
 	actionFunc(ci, build, rest, w, r)
+}
+
+func (ci *CI) HandleWebhook(proj *Project, w http.ResponseWriter, r *http.Request) {
+	ty, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil {
+		return
+	}
+
+	var ref string
+	switch ty {
+	case "application/json":
+		var hook struct {
+			After string
+		}
+		json.NewDecoder(r.Body).Decode(&hook)
+		ref = hook.After
+	case "application/x-www-form-urlencoded", "multipart/form-data":
+		ref = r.FormValue("after")
+	default:
+		return
+	}
+
+	if ref == "" || ref[0] == '-' {
+		return
+	}
+	ref, err = proj.Ref(ref)
+	if err != nil {
+		return
+	}
+	build, err := proj.GetBuild(ref)
+	if err != nil {
+		return
+	}
+	build.StartBuild()
 }
 
 func (ci *CI) Status(build *Build, route string, w http.ResponseWriter, r *http.Request) {
