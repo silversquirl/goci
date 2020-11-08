@@ -64,7 +64,10 @@ func (ci *CI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			ci.HandleWebhook(proj, w, r)
 		}
 
-		ref = "master"
+		u := r.URL
+		u.Path = path.Join("/", project, "master")
+		http.Redirect(w, r, u.String(), http.StatusMovedPermanently)
+		return
 	} else if ref[0] == '-' {
 		http.NotFound(w, r)
 		return
