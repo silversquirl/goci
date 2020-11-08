@@ -70,13 +70,13 @@ func (ci *CI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	actualRef, err := proj.Ref(ref)
+	actualRef, hash, err := proj.Ref(ref)
 	if err != nil {
 		log.Print(err)
 		http.NotFound(w, r)
 		return
 	}
-	if actualRef != ref {
+	if hash && actualRef != ref {
 		u := r.URL
 		u.Path = path.Join("/", project, actualRef, action, rest)
 		http.Redirect(w, r, u.String(), http.StatusTemporaryRedirect)
@@ -117,7 +117,7 @@ func (ci *CI) HandleWebhook(proj *Project, w http.ResponseWriter, r *http.Reques
 	if ref == "" || ref[0] == '-' {
 		return
 	}
-	ref, err = proj.Ref(ref)
+	ref, _, err = proj.Ref(ref)
 	if err != nil {
 		return
 	}

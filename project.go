@@ -65,18 +65,19 @@ func (proj *Project) Fetch() error {
 	return err
 }
 
-func (proj *Project) Ref(ref string) (string, error) {
-	// HACK: here we check the ref against a shortened sha1 hash of the same length to determine whether it's something that can change on the remote. There's almost definitely a better way of doing this
-	actualRef, err := proj.exec("git", "rev-parse", fmt.Sprintf("--short=%d", len(ref)), ref)
+func (proj *Project) Ref(ref string) (actualRef string, hash bool, err error) {
+	actualRef, err = proj.exec("git", "rev-parse", fmt.Sprintf("--short=%d", len(ref)), ref)
 	if err != nil || actualRef != ref {
 		proj.Fetch()
+	} else {
+		hash = true
 	}
 
 	actualRef, err = proj.exec("git", "rev-parse", "--short", ref)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	return actualRef, nil
+	return actualRef, hash, nil
 }
 
 type Build struct {
