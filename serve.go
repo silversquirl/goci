@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"log"
 	"mime"
 	"net/http"
@@ -173,6 +174,10 @@ func (ci *CI) Project(name string) (proj *Project, err error) {
 }
 
 func main() {
-	ci := NewCI("goci")
-	log.Fatal(http.ListenAndServe(":8080", ci))
+	addr := flag.String("addr", ":8080", "listen address")
+	dir := flag.String("dir", "./goci", "projects path")
+	flag.Parse()
+
+	ci := NewCI(*dir)
+	log.Fatal(http.ListenAndServe(*addr, ci))
 }
