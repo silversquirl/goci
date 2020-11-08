@@ -138,6 +138,7 @@ func (ci *CI) Status(build *Build, route string, w http.ResponseWriter, r *http.
 		http.NotFound(w, r)
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(build.Summary())
 }
 
@@ -160,6 +161,7 @@ func (ci *CI) Files(build *Build, route string, w http.ResponseWriter, r *http.R
 			http.NotFound(w, r)
 			return
 		}
+		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(names)
 	} else {
 		route = path.Clean(route)
