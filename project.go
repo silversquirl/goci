@@ -7,14 +7,16 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 )
 
 type Project struct {
-	Name  string
-	URL   string
-	path  string
-	build map[string]*Build
+	Name   string
+	URL    string
+	path   string
+	build  map[string]*Build
+	buildM sync.Mutex
 }
 
 func OpenProject(name, path string) (proj *Project, err error) {
@@ -94,6 +96,8 @@ type Build struct {
 }
 
 func (proj *Project) GetBuild(ref string) (*Build, error) {
+	proj.buildM.Lock()
+	defer proj.buildM.Unlock()
 	build, ok := proj.build[ref]
 	if !ok {
 		path := filepath.Join(proj.path, "goci", ref)

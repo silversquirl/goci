@@ -11,15 +11,17 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 type CI struct {
-	Path string
-	proj map[string]*Project
+	Path  string
+	proj  map[string]*Project
+	projM sync.Mutex
 }
 
 func NewCI(root string) *CI {
-	return &CI{root, make(map[string]*Project)}
+	return &CI{Path: root, proj: make(map[string]*Project)}
 }
 
 func splitFirst(route string) (first, rest string) {
@@ -166,6 +168,8 @@ func (ci *CI) Files(build *Build, route string, w http.ResponseWriter, r *http.R
 }
 
 func (ci *CI) Project(name string) (proj *Project, err error) {
+	ci.projM.Lock()
+	defer ci.projM.Unlock()
 	proj, ok := ci.proj[name]
 	if !ok {
 		proj, err = OpenProject(name, filepath.Join(ci.Path, name+".git"))
