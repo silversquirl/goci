@@ -86,7 +86,7 @@ func (ci *CI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	build, err := proj.GetBuild(ref)
+	build, err := proj.GetBuild(actualRef)
 	if err != nil {
 		log.Print(err)
 		http.NotFound(w, r)
