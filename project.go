@@ -2,6 +2,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -59,8 +60,23 @@ func (proj *Project) exec(name string, arg ...string) (string, error) {
 	return strings.TrimRight(string(out), "\n"), nil
 }
 
+func (proj *Project) Fetch() error {
+	_, err := proj.exec("git", "fetch")
+	return err
+}
+
 func (proj *Project) Ref(ref string) (string, error) {
-	return proj.exec("git", "rev-parse", "--short", ref)
+	// HACK: here we check the ref against a shortened sha1 hash of the same length to determine whether it's something that can change on the remote. There's almost definitely a better way of doing this
+	actualRef, err := proj.exec("git", "rev-parse", fmt.Sprintf("--short=%d", len(ref)), ref)
+	if err != nil || actualRef != ref {
+		proj.Fetch()
+	}
+
+	actualRef, err = proj.exec("git", "rev-parse", "--short", ref)
+	if err != nil {
+		return "", err
+	}
+	return actualRef, nil
 }
 
 type Build struct {
