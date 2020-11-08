@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"log"
+	"log/syslog"
 	"mime"
 	"net/http"
 	"os"
@@ -176,7 +177,16 @@ func (ci *CI) Project(name string) (proj *Project, err error) {
 func main() {
 	addr := flag.String("addr", ":8080", "listen address")
 	dir := flag.String("dir", "./goci", "projects path")
+	useSyslog := flag.Bool("syslog", false, "log to syslog")
 	flag.Parse()
+
+	if *useSyslog {
+		w, err := syslog.New(syslog.LOG_DAEMON|syslog.LOG_NOTICE, "")
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.SetOutput(w)
+	}
 
 	ci := NewCI(*dir)
 	log.Fatal(http.ListenAndServe(*addr, ci))
