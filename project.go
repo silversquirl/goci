@@ -169,7 +169,7 @@ func (build *Build) StartBuild() {
 
 		targetStr, err := build.Proj.exec("git", "--work-tree", build.CodePath, "config", "goci.targets")
 		if err != nil {
-			return
+			targetStr = ""
 		}
 
 		var targets []Target
