@@ -2,10 +2,12 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -91,7 +93,6 @@ type Build struct {
 	CodePath, FilesPath string
 
 	status   int32
-	buildCmd *exec.Cmd
 	buildLog string
 }
 
@@ -166,22 +167,132 @@ func (build *Build) StartBuild() {
 			return
 		}
 
-		build.buildCmd = exec.Command("go", "build", "-o", filepath.Join(build.FilesPath, build.Proj.Name))
-		build.buildCmd.Dir = build.CodePath
-
-		out, err := build.buildCmd.CombinedOutput()
-		build.buildLog = string(out)
-		switch e := err.(type) {
-		case nil:
-			status = BuildFinished
-		case *exec.ExitError:
-			build.buildLog += "\n" + e.Error()
-			status = BuildFailed
-			err = nil
-		default:
-			status = BuildFailed
+		targetStr, err := build.Proj.exec("git", "--work-tree", build.CodePath, "config", "goci.targets")
+		if err != nil {
+			return
 		}
+
+		var targets []Target
+		if targetStr == "" {
+			targets = []Target{{}}
+		} else {
+			for _, targetStr := range strings.Split(targetStr, " ") {
+				m := targetRe.FindStringSubmatch(targetStr)
+				if m == nil {
+					err = fmt.Errorf("Invalid target %q", targetStr)
+					return
+				}
+
+				target := Target{
+					OS:   m[1],
+					Arch: m[2],
+				}
+
+				for _, tag := range strings.Split(m[3], ",") {
+					if tag == "cgo" {
+						target.UseCgo = true
+					} else {
+						target.Tags = append(target.Tags, tag)
+					}
+				}
+
+				targets = append(targets, target)
+			}
+		}
+
+		buildLog := bytes.Buffer{}
+	build:
+		for _, target := range targets {
+			outfn := build.Proj.Name
+			if target.OS != "" {
+				outfn += "-" + target.OS
+			}
+			if target.Arch != "" {
+				outfn += "-" + target.Arch
+			}
+			if len(target.Tags) > 0 {
+				outfn += "-" + strings.Join(target.Tags, "-")
+			}
+			if target.OS == "windows" {
+				outfn += ".exe"
+			}
+
+			cmd := exec.Command("go", "build", "-o", filepath.Join(build.FilesPath, outfn), "-tags", strings.Join(target.Tags, ","))
+			cmd.Dir = build.CodePath
+			cmd.Env = os.Environ()
+			cmd.Stdout = &buildLog
+			cmd.Stderr = &buildLog
+
+			if target.OS != "" {
+				cmd.Env = append(cmd.Env, "GOOS="+target.OS)
+			}
+			if target.Arch != "" {
+				cmd.Env = append(cmd.Env, "GOARCH="+target.Arch)
+			}
+			if target.UseCgo {
+				cmd.Env = append(cmd.Env, "CGO_ENABLED=1")
+
+				arch := ""
+				switch target.Arch {
+				case "":
+				case "amd64":
+					arch = "x86_64"
+				case "386":
+					arch = "x86"
+				// TODO: more
+				default:
+					err = fmt.Errorf("Unknown architecture %q", target.Arch)
+				}
+
+				os := ""
+				switch target.OS {
+				case "":
+				case "linux":
+					// FIXME: do better than just guessing here - libc could be non-gnu, kernel could be branded
+					os = "unknown-linux-gnu"
+				case "windows":
+					os = "w64-mingw32"
+				// TODO: more
+				default:
+					err = fmt.Errorf("Unknown OS %q", target.OS)
+				}
+
+				if arch != "" && os != "" {
+					cmd.Env = append(cmd.Env, fmt.Sprintf("CC=%s-%s-gcc", arch, os))
+				}
+			} else {
+				cmd.Env = append(cmd.Env, "CGO_ENABLED=0")
+			}
+
+			buildLog.WriteString(cmd.String())
+			buildLog.WriteByte('\n')
+
+			err := cmd.Run()
+			switch e := err.(type) {
+			case nil:
+				status = BuildFinished
+			case *exec.ExitError:
+				buildLog.WriteByte('\n')
+				buildLog.WriteString(e.Error())
+				status = BuildFailed
+				err = nil
+				break build
+			default:
+				status = BuildFailed
+				break build
+			}
+		}
+
+		build.buildLog = buildLog.String()
 	}()
+}
+
+var targetRe = regexp.MustCompile(`(\w+):(\w+)(?:\((\w+(?:,\w+)*)\))?`)
+
+type Target struct {
+	OS, Arch string
+	UseCgo   bool
+	Tags     []string
 }
 
 func (build *Build) Status() BuildStatus {
