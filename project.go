@@ -170,6 +170,7 @@ func (build *Build) StartBuild() {
 
 		targetStr, err := build.Proj.exec("git", "--work-tree", build.CodePath, "config", "goci.targets")
 		if err != nil {
+			err = nil
 			targetStr = ""
 		}
 
@@ -203,6 +204,7 @@ func (build *Build) StartBuild() {
 
 		packageStr, err := build.Proj.exec("git", "--work-tree", build.CodePath, "config", "goci.packages")
 		if err != nil {
+			err = nil
 			packageStr = ""
 		}
 		var packages []string
