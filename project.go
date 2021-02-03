@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -200,86 +201,102 @@ func (build *Build) StartBuild() {
 			}
 		}
 
+		packageStr, err := build.Proj.exec("git", "--work-tree", build.CodePath, "config", "goci.packages")
+		if err != nil {
+			packageStr = ""
+		}
+		var packages []string
+		if targetStr == "" {
+			packages = []string{"."}
+		} else {
+			packages = strings.Split(packageStr, " ")
+		}
+
 		buildLog := bytes.Buffer{}
 	build:
-		for _, target := range targets {
-			outfn := build.Proj.Name
-			if target.OS != "" {
-				outfn += "-" + target.OS
-			}
-			if target.Arch != "" {
-				outfn += "-" + target.Arch
-			}
-			if len(target.Tags) > 0 {
-				outfn += "-" + strings.Join(target.Tags, "-")
-			}
-			if target.OS == "windows" {
-				outfn += ".exe"
-			}
-
-			cmd := exec.Command("go", "build", "-o", filepath.Join(build.FilesPath, outfn), "-tags", strings.Join(target.Tags, ","))
-			cmd.Dir = build.CodePath
-			cmd.Env = os.Environ()
-			cmd.Stdout = &buildLog
-			cmd.Stderr = &buildLog
-
-			if target.OS != "" {
-				cmd.Env = append(cmd.Env, "GOOS="+target.OS)
-			}
-			if target.Arch != "" {
-				cmd.Env = append(cmd.Env, "GOARCH="+target.Arch)
-			}
-			if target.UseCgo {
-				cmd.Env = append(cmd.Env, "CGO_ENABLED=1")
-
-				arch := ""
-				switch target.Arch {
-				case "":
-				case "amd64":
-					arch = "x86_64"
-				case "386":
-					arch = "x86"
-				// TODO: more
-				default:
-					err = fmt.Errorf("Unknown architecture %q", target.Arch)
+		for _, pkg := range packages {
+			for _, target := range targets {
+				outfn := path.Base(pkg)
+				if outfn == "." {
+					outfn = build.Proj.Name
+				}
+				if target.OS != "" {
+					outfn += "-" + target.OS
+				}
+				if target.Arch != "" {
+					outfn += "-" + target.Arch
+				}
+				if len(target.Tags) > 0 {
+					outfn += "-" + strings.Join(target.Tags, "-")
+				}
+				if target.OS == "windows" {
+					outfn += ".exe"
 				}
 
-				os := ""
-				switch target.OS {
-				case "":
-				case "linux":
-					// FIXME: do better than just guessing here - libc could be non-gnu, kernel could be branded
-					os = "unknown-linux-gnu"
-				case "windows":
-					os = "w64-mingw32"
-				// TODO: more
-				default:
-					err = fmt.Errorf("Unknown OS %q", target.OS)
+				cmd := exec.Command("go", "build", "-o", filepath.Join(build.FilesPath, outfn), "-tags", strings.Join(target.Tags, ","), pkg)
+				cmd.Dir = build.CodePath
+				cmd.Env = os.Environ()
+				cmd.Stdout = &buildLog
+				cmd.Stderr = &buildLog
+
+				if target.OS != "" {
+					cmd.Env = append(cmd.Env, "GOOS="+target.OS)
+				}
+				if target.Arch != "" {
+					cmd.Env = append(cmd.Env, "GOARCH="+target.Arch)
+				}
+				if target.UseCgo {
+					cmd.Env = append(cmd.Env, "CGO_ENABLED=1")
+
+					arch := ""
+					switch target.Arch {
+					case "":
+					case "amd64":
+						arch = "x86_64"
+					case "386":
+						arch = "x86"
+					// TODO: more
+					default:
+						err = fmt.Errorf("Unknown architecture %q", target.Arch)
+					}
+
+					os := ""
+					switch target.OS {
+					case "":
+					case "linux":
+						// FIXME: do better than just guessing here - libc could be non-gnu, kernel could be branded
+						os = "unknown-linux-gnu"
+					case "windows":
+						os = "w64-mingw32"
+					// TODO: more
+					default:
+						err = fmt.Errorf("Unknown OS %q", target.OS)
+					}
+
+					if arch != "" && os != "" {
+						cmd.Env = append(cmd.Env, fmt.Sprintf("CC=%s-%s-gcc", arch, os))
+					}
+				} else {
+					cmd.Env = append(cmd.Env, "CGO_ENABLED=0")
 				}
 
-				if arch != "" && os != "" {
-					cmd.Env = append(cmd.Env, fmt.Sprintf("CC=%s-%s-gcc", arch, os))
-				}
-			} else {
-				cmd.Env = append(cmd.Env, "CGO_ENABLED=0")
-			}
-
-			buildLog.WriteString(cmd.String())
-			buildLog.WriteByte('\n')
-
-			err := cmd.Run()
-			switch e := err.(type) {
-			case nil:
-				status = BuildFinished
-			case *exec.ExitError:
+				buildLog.WriteString(cmd.String())
 				buildLog.WriteByte('\n')
-				buildLog.WriteString(e.Error())
-				status = BuildFailed
-				err = nil
-				break build
-			default:
-				status = BuildFailed
-				break build
+
+				err := cmd.Run()
+				switch e := err.(type) {
+				case nil:
+					status = BuildFinished
+				case *exec.ExitError:
+					buildLog.WriteByte('\n')
+					buildLog.WriteString(e.Error())
+					status = BuildFailed
+					err = nil
+					break build
+				default:
+					status = BuildFailed
+					break build
+				}
 			}
 		}
 
